@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import MutableMapping, Optional, Union, overload, Iterator, MutableSet, List
+from typing import MutableMapping, Optional, Tuple, Union, overload, Iterator, MutableSet, List
 from io import BufferedIOBase, BytesIO
 
 from multiformats import CID, multicodec, multibase, multihash, varint
@@ -10,6 +10,7 @@ from typing_validation import validate
 import requests
 
 from .car import read_car
+from .fbl import from_bytes, read, MultiformatsBlock
 from .utils import StreamLike
 
 
@@ -162,6 +163,82 @@ class MappingCAStore(ContentAddressableStore):
         cid = CID(self._default_base, 1, codec, h)
         self._mapping[str(cid)] = raw_value
         return cid
+
+
+class FBLStore(ContentAddressableStore):
+    def __init__(self,
+                 host: str,
+                 default_hash: Union[str, int, multicodec.Multicodec, multihash.Multihash] = "sha2-256",
+                 sub_chunk_length: int = 64000,
+                 ):
+        validate(host, str)
+        validate(default_hash, Union[str, int, multicodec.Multicodec, multihash.Multihash])
+
+        self._host = host
+        self._sub_chunk_length = sub_chunk_length
+
+        if isinstance(default_hash, multihash.Multihash):
+            self._default_hash = default_hash
+        else:
+            self._default_hash = multihash.Multihash(codec=default_hash)
+
+    def get(self, cid: CID) -> ValueType:
+        value, is_root = self.get_raw(cid)
+        if is_root:
+            return dag_cbor.decode(value)
+        else:
+            return value
+
+    def get_raw(self, cid: CID) -> Tuple[bytes, bool]:
+        try:
+            return read(str(cid), self.ipfs_get), False
+        except ValueError:
+            res = requests.post(self._host + "/api/v0/block/get", params={"arg": str(cid)})
+            res.raise_for_status()
+            return res.content, True
+
+    def ipfs_put(self, block: MultiformatsBlock) -> None:
+        requests.post(
+            self._host + "/api/v0/dag/put",
+            params={"store-codec": block.cid.codec.name,
+                    "input-codec": block.cid.codec.name},
+            files={"dummy": block.bytes_value}
+        )
+
+    def ipfs_put_bytes(self, input_bytes: bytes) -> CID:
+        for block in from_bytes(input_bytes, sub_chunk_length=self._sub_chunk_length, hasher=self._default_hash):
+            self.ipfs_put(block)
+        return block.cid
+
+    def ipfs_get(self, cid) -> Union[dict, bytes]:
+        cid_type = CID.decode(cid).codec.name
+        res = requests.post(
+            self._host + f"/api/v0/dag/get/{cid}",
+            params={"output-codec": cid_type} if cid_type == "raw" else None
+        )
+        return res.json() if cid_type == "dag-cbor" else res.content
+
+    def put_raw(self,
+                raw_value: bytes,
+                codec: Union[str, int, multicodec.Multicodec]) -> CID:
+        validate(raw_value, bytes)
+        validate(codec, Union[str, int, multicodec.Multicodec])
+
+        if isinstance(codec, str):
+            codec = multicodec.get(name=codec)
+        elif isinstance(codec, int):
+            codec = multicodec.get(code=codec)
+
+        if codec.name == "dag-cbor":
+            res = requests.post(self._host + "/api/v0/dag/put",
+                                params={"store-codec": codec.name,
+                                        "input-codec": codec.name,
+                                        "hash": self._default_hash.name},
+                                files={"dummy": raw_value})
+            res.raise_for_status()
+            return CID.decode(res.json()["Cid"]["/"])
+        else:
+            return self.ipfs_put_bytes(raw_value)
 
 
 class IPFSStore(ContentAddressableStore):
