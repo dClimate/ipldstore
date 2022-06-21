@@ -187,32 +187,20 @@ class IPFSStore(ContentAddressableStore):
 
     def get(self, cid: CID) -> ValueType:
         value = self.get_raw(cid)
-        try:
-            print("tried")
-            possible_value = cbor2.loads(value)
-            if not isinstance(possible_value, dict):
-                raise TypeError
-            value = possible_value
-        except TypeError:
-            print("exception raised")
-            pass
-        print("value returned")
-        return value
-        # if cid.codec == DagPbCodec:
-        #     return value
-        # elif cid.codec == DagCborCodec:
-        #     print("using cbor codec")
-        #     return cbor2.loads(value)
-        # else:
-        #     raise ValueError(f"can't decode CID's codec '{cid.codec.name}'")
+        if cid.codec == DagPbCodec:
+            return value
+        elif cid.codec == DagCborCodec:
+            return cbor2.loads(value)
+        else:
+            raise ValueError(f"can't decode CID's codec '{cid.codec.name}'")
 
     def get_raw(self, cid: CID) -> bytes:
         validate(cid, CID)
-        # if cid.codec == DagPbCodec:
-        res = requests.post(self._host + "/api/v0/cat", params={"arg": str(cid)})
-        # else:
-        #     res = requests.post(self._host + "/api/v0/block/get", params={"arg": str(cid)})
-        # res.raise_for_status()
+        if cid.codec == DagPbCodec:
+            res = requests.post(self._host + "/api/v0/cat", params={"arg": str(cid)})
+        else:
+            res = requests.post(self._host + "/api/v0/block/get", params={"arg": str(cid)})
+        res.raise_for_status()
         return res.content
 
     def put(self, value: ValueType) -> CID:
@@ -233,21 +221,21 @@ class IPFSStore(ContentAddressableStore):
         elif isinstance(codec, int):
             codec = multicodec.get(code=codec)
 
-        # if codec == DagPbCodec:
-        res = requests.post(self._host + "/api/v0/add",
-                            params={"pin": codec == DagCborCodec, "chunker": self._chunker},
+        if codec == DagPbCodec:
+            res = requests.post(self._host + "/api/v0/add",
+                                params={"pin": False, "chunker": self._chunker},
+                                files={"dummy": raw_value})
+            res.raise_for_status()
+            return CID.decode(res.json()["Hash"])
+        else:
+            res = requests.post(self._host + "/api/v0/dag/put",
+                            params={"store-codec": codec.name,
+                                    "input-codec": codec.name,
+                                    "pin": True,
+                                    "hash": self._default_hash.name},
                             files={"dummy": raw_value})
-        res.raise_for_status()
-        return CID.decode(res.json()["Hash"])
-        # else:
-        #     res = requests.post(self._host + "/api/v0/dag/put",
-        #                     params={"store-codec": codec.name,
-        #                             "input-codec": codec.name,
-        #                             "pin": True,
-        #                             "hash": self._default_hash.name},
-        #                     files={"dummy": raw_value})
-            # res.raise_for_status()
-            # return CID.decode(res.json()["Cid"]["/"])
+            res.raise_for_status()
+            return CID.decode(res.json()["Cid"]["/"])
 
 
 def iter_links(o: DagCborEncodable) -> Iterator[CID]:
