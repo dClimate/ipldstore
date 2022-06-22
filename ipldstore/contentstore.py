@@ -5,6 +5,7 @@ from io import BufferedIOBase, BytesIO
 from multiformats import CID, multicodec, multibase, multihash, varint
 import cbor2, dag_cbor
 from cbor2 import CBORTag
+from cbor2 import CBORDecodeValueError
 from dag_cbor.encoding import EncodableType as DagCborEncodable
 from typing_validation import validate
 
@@ -188,24 +189,15 @@ class IPFSStore(ContentAddressableStore):
     def get(self, cid: CID) -> ValueType:
         value = self.get_raw(cid)
         try:
-            print("tried")
             possible_value = cbor2.loads(value)
-            if not isinstance(possible_value, dict):
+            if not isinstance(possible_value, dict) or '.zattrs' not in possible_value:
                 raise TypeError
-            value = possible_value
-        except TypeError:
-            print("exception raised")
+            else:
+                value = possible_value
+        except (TypeError, UnicodeDecodeError, CBORDecodeValueError):
             pass
-        print("value returned")
         return value
-        # if cid.codec == DagPbCodec:
-        #     return value
-        # elif cid.codec == DagCborCodec:
-        #     print("using cbor codec")
-        #     return cbor2.loads(value)
-        # else:
-        #     raise ValueError(f"can't decode CID's codec '{cid.codec.name}'")
-
+        
     def get_raw(self, cid: CID) -> bytes:
         validate(cid, CID)
         # if cid.codec == DagPbCodec:
