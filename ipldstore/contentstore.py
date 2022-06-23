@@ -188,16 +188,11 @@ class IPFSStore(ContentAddressableStore):
 
     def get(self, cid: CID) -> ValueType:
         value = self.get_raw(cid)
-        try:
-            possible_value = cbor2.loads(value)
-            if not isinstance(possible_value, dict) or '.zattrs' not in possible_value:
-                raise TypeError
-            else:
-                value = possible_value
-        except (TypeError, UnicodeDecodeError, CBORDecodeValueError):
-            pass
-        return value
-        
+        if hasattr(self, "root_cid") and cid == self.root_cid:
+            return cbor2.loads(value)
+        else:
+            return value
+
     def get_raw(self, cid: CID) -> bytes:
         validate(cid, CID)
         # if cid.codec == DagPbCodec:
