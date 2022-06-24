@@ -141,6 +141,7 @@ class IPLDStore(MutableMappingSB):
             cid = CID.decode(cid)
         assert cid in self._store
         self.root_cid = cid
+        self._store.root_cid = cid
         self._mapping = self._store.get(cid)  # type: ignore
 
 
