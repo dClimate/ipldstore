@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+import asyncio
+import aiohttp
 from typing import MutableMapping, Optional, Union, overload, Iterator, MutableSet, List
 from io import BufferedIOBase, BytesIO
 from itertools import zip_longest
@@ -171,7 +173,15 @@ class MappingCAStore(ContentAddressableStore):
         self._mapping[str(cid)] = raw_value
         return cid
 
-
+async def _get(host, cid):
+    async with aiohttp.ClientSession() as session:
+        if cid.codec == DagPbCodec:
+            req = session.post(host + "/api/v0/cat", params={"arg": str(cid)})
+        else:
+            req = session.post(host + "/api/v0/block/get", params={"arg": str(cid)})
+        async with req as resp:
+            return await resp.read()
+            
 class IPFSStore(ContentAddressableStore):
     def __init__(self,
                  host: str,
@@ -219,13 +229,10 @@ class IPFSStore(ContentAddressableStore):
             raise ValueError(f"can't decode CID's codec '{cid.codec.name}'")
 
     def get_raw(self, cid: CID) -> bytes:
+        loop = asyncio.get_event_loop()
         validate(cid, CID)
-        if cid.codec == DagPbCodec:
-            res = requests.post(self._host + "/api/v0/cat", params={"arg": str(cid)})
-        else:
-            res = requests.post(self._host + "/api/v0/block/get", params={"arg": str(cid)})
-        res.raise_for_status()
-        return res.content
+        res = loop.run_until_complete(_get(self._host, cid))
+        return res
 
     def make_tree_structure(self, node):
         if not isinstance(node, dict):
