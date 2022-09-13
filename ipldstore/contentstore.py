@@ -176,10 +176,10 @@ class MappingCAStore(ContentAddressableStore):
 async def _get(host, cid):
     async with aiohttp.ClientSession() as session:
         if cid.codec == DagPbCodec:
-            req = session.post(host + "/api/v0/cat", params={"arg": str(cid)})
+            api_method = "/api/v0/cat"
         else:
-            req = session.post(host + "/api/v0/block/get", params={"arg": str(cid)})
-        async with req as resp:
+            api_method = "/api/v0/block/get"
+        async with session.post(host + api_method, params={"arg": str(cid)}) as resp:
             return await resp.read()
             
 class IPFSStore(ContentAddressableStore):
@@ -229,8 +229,8 @@ class IPFSStore(ContentAddressableStore):
             raise ValueError(f"can't decode CID's codec '{cid.codec.name}'")
 
     def get_raw(self, cid: CID) -> bytes:
-        loop = asyncio.get_event_loop()
         validate(cid, CID)
+        loop = asyncio.get_event_loop()
         res = loop.run_until_complete(_get(self._host, cid))
         return res
 
