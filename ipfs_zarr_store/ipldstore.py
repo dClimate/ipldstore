@@ -2,17 +2,15 @@
 Implementation of a MutableMapping based on IPLD data structures.
 """
 
-from io import BufferedIOBase
 from collections.abc import MutableMapping
 import sys
-from typing import Optional, Callable, Any, TypeVar, Union, Iterator, overload, List, Dict
+from typing import Optional, TypeVar, Union, Iterator, List, Dict
 
 from multiformats import CID
 from cbor2 import CBORTag
 from numcodecs.compat import ensure_bytes  # type: ignore
 
-from .contentstore import ContentAddressableStore, IPFSStore, MappingCAStore
-from .utils import StreamLike
+from .ipfs_content_store import IPFSContentStore
 from .hamt_wrapper import HamtWrapper, inline_objects
 
 
@@ -21,23 +19,22 @@ if sys.version_info >= (3, 9):
     MutableMappingSB = MutableMapping[str, bytes]
 else:
     from typing import MutableMapping as MutableMappingT
-
     MutableMappingSB = MutableMapping
 
 
-class IPLDStore(MutableMappingSB):
+class IPFSZarrStore(MutableMappingSB):
     def __init__(
         self,
         host: str,
-        castore: Optional[ContentAddressableStore] = None,
+        store: Optional[IPFSContentStore] = None,
         sep: str = "/",
         should_async_get: bool = True,
     ):
         self._host = host
-        # In this iteration of IPLDStore, we use a HAMT to store zarr chunks instead of a dict
+        # Use a HAMT to store zarr chunks instead of a dict
         self._mapping = HamtWrapper(self._host)
-        self._store = castore or MappingCAStore()
-        if isinstance(self._store, IPFSStore) and should_async_get:
+        self._store = store or IPFSContentStore(host)
+        if should_async_get:
             # Monkey patch zarr to use the async get of multiple chunks
             def storage_getitems(kv_self, keys, on_error="omit"):
                 return kv_self._mutable_mapping.getitems(keys)
@@ -49,8 +46,6 @@ class IPLDStore(MutableMappingSB):
         self.root_cid: Optional[CID] = None
 
     def getitems(self, keys: List[str]) -> Dict[str, bytes]:
-        if not isinstance(self._store, IPFSStore):
-            raise NotImplementedError("Multiget of keys only supported for IPFSStore")
         cid_to_key_map = {}
         key_to_bytes_map = {}
         to_async_get = []
@@ -104,13 +99,13 @@ class IPLDStore(MutableMappingSB):
         self._mapping.set(key_parts, set_value)
         self.root_cid = None
 
-    def __delitem__(self, key: str) -> None:
-        # key_parts = key.split(self.sep)
-        # del_recursive(self._mapping, key_parts)
+    def __delitem__(self, _: str) -> None:
+        """
+        Not impleneted in py-hamt, so not implemented here (for now)
+        """
         raise NotImplementedError
 
     def __iter__(self) -> Iterator[str]:
-        # return self._iter_nested("", self._mapping)
         return self._mapping.iter_all()
 
     def __len__(self) -> int:
@@ -127,29 +122,6 @@ class IPLDStore(MutableMappingSB):
     def clear(self) -> None:
         self.root_cid = None
         self._mapping = HamtWrapper(self._host)
-
-    @overload
-    def to_car(self, stream: BufferedIOBase) -> int:
-        ...
-
-    @overload
-    def to_car(self, stream: None = None) -> bytes:
-        ...
-
-    def to_car(self, stream: Optional[BufferedIOBase] = None) -> Union[int, bytes]:
-        return self._store.to_car(self.freeze(), stream)
-
-    def import_car(self, stream: StreamLike) -> None:
-        roots = self._store.import_car(stream)
-        if len(roots) != 1:
-            raise ValueError(f"CAR must have a single root, the given CAR has {len(roots)} roots!")
-        self.set_root(roots[0])
-
-    @classmethod
-    def from_car(cls, stream: StreamLike) -> "IPLDStore":
-        instance = cls()
-        instance.import_car(stream)
-        return instance
 
     def set_root(self, cid: CID) -> None:
         if isinstance(cid, str):

@@ -1,9 +1,9 @@
 """
-IPLD stores for zarr
+IPLD store for zarr
 """
 
-from .ipldstore import IPLDStore
-from .contentstore import ContentAddressableStore, MappingCAStore, IPFSStore
+from .ipldstore import IPFSZarrStore
+from .ipfs_content_store import IPFSContentStore
 
 
 def get_ipfs_mapper(
@@ -11,12 +11,12 @@ def get_ipfs_mapper(
     max_nodes_per_level: int = 10000,
     chunker: str = "size-262144",
     should_async_get: bool = True,
-) -> IPLDStore:
+) -> IPFSZarrStore:
     """
     Get an IPLDStore for IPFS running on the given host.
     """
-    return IPLDStore(
+    return IPFSZarrStore(
         host,
-        IPFSStore(host, chunker=chunker, max_nodes_per_level=max_nodes_per_level),
+        IPFSContentStore(host, chunker=chunker, max_nodes_per_level=max_nodes_per_level),
         should_async_get=should_async_get,
     )
