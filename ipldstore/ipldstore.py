@@ -5,11 +5,12 @@ Implementation of a MutableMapping based on IPLD data structures.
 from io import BufferedIOBase
 from collections.abc import MutableMapping
 import sys
-from typing import Optional, Callable, Any, TypeVar, Union, Iterator, overload, List, Dict
+from typing import Optional, TypeVar, Union, Iterator, overload, List, Dict
 
 from multiformats import CID
 from cbor2 import CBORTag
 from numcodecs.compat import ensure_bytes  # type: ignore
+import zarr
 
 from .contentstore import ContentAddressableStore, IPFSStore, MappingCAStore
 from .utils import StreamLike
@@ -23,6 +24,10 @@ else:
     from typing import MutableMapping as MutableMappingT
 
     MutableMappingSB = MutableMapping
+
+class IPLDKVStore(zarr.KVStore):
+    def getitems(self, keys, on_error="omit", **kwargs):
+        return self._mutable_mapping.getitems(keys)
 
 
 class IPLDStore(MutableMappingSB):
@@ -38,13 +43,10 @@ class IPLDStore(MutableMappingSB):
         self._mapping = HamtWrapper(self._host)
         self._store = castore or MappingCAStore()
         if isinstance(self._store, IPFSStore) and should_async_get:
-            # Monkey patch zarr to use the async get of multiple chunks
-            def storage_getitems(kv_self, keys, on_error="omit", **kwargs):
-                return kv_self._mutable_mapping.getitems(keys)
-
-            import zarr
-
-            zarr.KVStore.getitems = storage_getitems
+            # Instead of monkey-patching zarr.KVStore, create an instance of our custom class
+            self.kvstore = IPLDKVStore(self)
+        else:
+            self.kvstore = zarr.KVStore(self)
         self.sep = sep
         self.root_cid: Optional[CID] = None
 
