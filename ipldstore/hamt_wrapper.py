@@ -1,12 +1,13 @@
 import cbor2
 from dataclasses import dataclass
 from contextlib import nullcontext
+import threading
 import hashlib
 import json
 import psutil
 import requests
 import typing
-from dask.distributed import Lock, get_client
+from dask.distributed import Lock as DaskLock, get_client
 from multiformats import CID
 from hashlib import sha256
 from py_hamt.hamt import Hamt, load
@@ -200,7 +201,7 @@ class HamtWrapper:
 
         self.others_dict = others_dict if others_dict is not None else {}
         self._system_ram = psutil.virtual_memory().total
-        self._in_dask_context = _in_dask_context()
+        self.lock = DaskLock() if _in_dask_context() else threading.Lock()
 
     def get(self, key_path: typing.List[str]):
         """Get the value located at a `key_path`. First checks the HAMT, and if unable to find the key,
@@ -229,7 +230,7 @@ class HamtWrapper:
             # We need to lock the HAMT to prevent multiple threads writing to it at once,
             # as it is not thread safe
             # lock needs name so dask knows to recognize it across threads
-            with Lock("hamt-write") if self._in_dask_context else nullcontext():
+            with self.lock:
                 self.hamt = self.hamt.set(self.SEP.join(key_path), value)
                 # Now check if the percent of system RAM used by the store's mapping exceeds a 10% threshold
                 percent_ram_used_by_mapping = (
