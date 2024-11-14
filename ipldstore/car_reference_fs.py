@@ -8,7 +8,10 @@ from .car import read_car, CARBlockLocation
 from .ipldstore import inline_objects
 from .utils import StreamLike
 
-def collect_tree_objects(stream_or_bytes: StreamLike) -> Tuple[CID, Dict[CID, Any], Dict[CID, CARBlockLocation]]:
+
+def collect_tree_objects(
+    stream_or_bytes: StreamLike,
+) -> Tuple[CID, Dict[CID, Any], Dict[CID, CARBlockLocation]]:
     DagCborCodec = multicodec.get("dag-cbor")
 
     roots, blocks = read_car(stream_or_bytes)
@@ -26,7 +29,9 @@ def collect_tree_objects(stream_or_bytes: StreamLike) -> Tuple[CID, Dict[CID, An
     return root, cbor_objects, object_locations
 
 
-def car2reference_fs_refs(stream_or_bytes: StreamLike, stream_name: str) -> Dict[str, Any]:
+def car2reference_fs_refs(
+    stream_or_bytes: StreamLike, stream_name: str
+) -> Dict[str, Any]:
     root, cbor_objects, object_locations = collect_tree_objects(stream_or_bytes)
 
     tree = dag_cbor.decode(cbor_objects[root])

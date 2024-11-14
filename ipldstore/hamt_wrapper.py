@@ -184,9 +184,7 @@ class HamtWrapper:
         """
 
         # Register the sha2-256 hash with HAMT
-        Hamt.register_hasher(
-            0x12, 32, lambda x: hashlib.sha256(x).digest()
-        )
+        Hamt.register_hasher(0x12, 32, lambda x: hashlib.sha256(x).digest())
         self._host = host
         store = HamtMemoryStore(self._host)
 

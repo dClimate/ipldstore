@@ -1,5 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import Dict, MutableMapping, Optional, Union, overload, Iterator, MutableSet, List
+from typing import (
+    Dict,
+    MutableMapping,
+    Optional,
+    Union,
+    overload,
+    Iterator,
+    MutableSet,
+    List,
+)
 from io import BufferedIOBase, BytesIO
 from itertools import zip_longest
 
@@ -33,12 +42,12 @@ def get_retry_session() -> requests.Session:
 
 
 def default_encoder(encoder, value):
-    encoder.encode(cbor2.CBORTag(42,  b'\x00' + bytes(value)))
+    encoder.encode(cbor2.CBORTag(42, b"\x00" + bytes(value)))
+
 
 class ContentAddressableStore(ABC):
     @abstractmethod
-    def get_raw(self, cid: CID) -> bytes:
-        ...
+    def get_raw(self, cid: CID) -> bytes: ...
 
     def get(self, cid: CID) -> ValueType:
         value = self.get_raw(cid)
@@ -58,30 +67,36 @@ class ContentAddressableStore(ABC):
             return True
 
     @abstractmethod
-    def put_raw(self,
-                raw_value: bytes,
-                codec: Union[str, int, multicodec.Multicodec]) -> CID:
-        ...
+    def put_raw(
+        self, raw_value: bytes, codec: Union[str, int, multicodec.Multicodec]
+    ) -> CID: ...
 
     def put(self, value: ValueType) -> CID:
         validate(value, ValueType)
         if isinstance(value, bytes):
             return self.put_raw(value, RawCodec)
         else:
-            return self.put_raw(cbor2.dumps(value, default=default_encoder), DagCborCodec)
+            return self.put_raw(
+                cbor2.dumps(value, default=default_encoder), DagCborCodec
+            )
 
     def normalize_cid(self, cid: CID) -> CID:  # pylint: disable=no-self-use
         return cid
 
 
 class MappingCAStore(ContentAddressableStore):
-    def __init__(self,
-                 mapping: Optional[MutableMapping[str, bytes]] = None,
-                 default_hash: Union[str, int, multicodec.Multicodec, multihash.Multihash] = "sha2-256",
-                 default_base: Union[str, multibase.Multibase] = "base32",
-                 ):
+    def __init__(
+        self,
+        mapping: Optional[MutableMapping[str, bytes]] = None,
+        default_hash: Union[
+            str, int, multicodec.Multicodec, multihash.Multihash
+        ] = "sha2-256",
+        default_base: Union[str, multibase.Multibase] = "base32",
+    ):
         validate(mapping, Optional[MutableMapping[str, bytes]])
-        validate(default_hash, Union[str, int, multicodec.Multicodec, multihash.Multihash])
+        validate(
+            default_hash, Union[str, int, multicodec.Multicodec, multihash.Multihash]
+        )
         validate(default_base, Union[str, multibase.Multibase])
 
         if mapping is not None:
@@ -106,9 +121,9 @@ class MappingCAStore(ContentAddressableStore):
         validate(cid, CID)
         return self._mapping[str(self.normalize_cid(cid))]
 
-    def put_raw(self,
-                raw_value: bytes,
-                codec: Union[str, int, multicodec.Multicodec]) -> CID:
+    def put_raw(
+        self, raw_value: bytes, codec: Union[str, int, multicodec.Multicodec]
+    ) -> CID:
         validate(raw_value, bytes)
         validate(codec, Union[str, int, multicodec.Multicodec])
 
@@ -136,14 +151,19 @@ async def _main_async(keys: List[CID], host: str, d: Dict[CID, bytes]):
 
 
 class IPFSStore(ContentAddressableStore):
-    def __init__(self,
-                 host: str,
-                 chunker: str = "size-262144",
-                 max_nodes_per_level: int = 10000,
-                 default_hash: Union[str, int, multicodec.Multicodec, multihash.Multihash] = "sha2-256",
-                 ):
+    def __init__(
+        self,
+        host: str,
+        chunker: str = "size-262144",
+        max_nodes_per_level: int = 10000,
+        default_hash: Union[
+            str, int, multicodec.Multicodec, multihash.Multihash
+        ] = "sha2-256",
+    ):
         validate(host, str)
-        validate(default_hash, Union[str, int, multicodec.Multicodec, multihash.Multihash])
+        validate(
+            default_hash, Union[str, int, multicodec.Multicodec, multihash.Multihash]
+        )
 
         self._host = host
         self._chunker = chunker
@@ -176,7 +196,9 @@ class IPFSStore(ContentAddressableStore):
         if cid.codec == DagPbCodec:
             res = session.post(self._host + "/api/v0/cat", params={"arg": str(cid)})
         else:
-            res = session.post(self._host + "/api/v0/block/get", params={"arg": str(cid)})
+            res = session.post(
+                self._host + "/api/v0/block/get", params={"arg": str(cid)}
+            )
         res.raise_for_status()
         return res.content
 
@@ -185,12 +207,16 @@ class IPFSStore(ContentAddressableStore):
         if isinstance(value, bytes):
             return self.put_raw(value, DagPbCodec)
         else:
-            return self.put_raw(cbor2.dumps(value, default=default_encoder), DagCborCodec)
+            return self.put_raw(
+                cbor2.dumps(value, default=default_encoder), DagCborCodec
+            )
 
-    def put_raw(self,
-                raw_value: bytes,
-                codec: Union[str, int, multicodec.Multicodec],
-                should_pin=True) -> CID:
+    def put_raw(
+        self,
+        raw_value: bytes,
+        codec: Union[str, int, multicodec.Multicodec],
+        should_pin=True,
+    ) -> CID:
         validate(raw_value, bytes)
         validate(codec, Union[str, int, multicodec.Multicodec])
 
@@ -202,18 +228,24 @@ class IPFSStore(ContentAddressableStore):
         session = get_retry_session()
 
         if codec == DagPbCodec:
-            res = session.post(self._host + "/api/v0/add",
-                                params={"pin": False, "chunker": self._chunker},
-                                files={"dummy": raw_value})
+            res = session.post(
+                self._host + "/api/v0/add",
+                params={"pin": False, "chunker": self._chunker},
+                files={"dummy": raw_value},
+            )
             res.raise_for_status()
             return CID.decode(res.json()["Hash"])
         else:
-            res = session.post(self._host + "/api/v0/dag/put",
-                            params={"store-codec": codec.name,
-                                    "input-codec": codec.name,
-                                    "pin": should_pin,
-                                    "hash": self._default_hash.name},
-                            files={"dummy": raw_value})
+            res = session.post(
+                self._host + "/api/v0/dag/put",
+                params={
+                    "store-codec": codec.name,
+                    "input-codec": codec.name,
+                    "pin": should_pin,
+                    "hash": self._default_hash.name,
+                },
+                files={"dummy": raw_value},
+            )
             res.raise_for_status()
             return CID.decode(res.json()["Cid"]["/"])
 

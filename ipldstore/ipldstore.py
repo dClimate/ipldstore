@@ -5,7 +5,17 @@ Implementation of a MutableMapping based on IPLD data structures.
 from io import BufferedIOBase
 from collections.abc import MutableMapping
 import sys
-from typing import Optional, Callable, Any, TypeVar, Union, Iterator, overload, List, Dict
+from typing import (
+    Optional,
+    Callable,
+    Any,
+    TypeVar,
+    Union,
+    Iterator,
+    overload,
+    List,
+    Dict,
+)
 
 from multiformats import CID
 from cbor2 import CBORTag
@@ -129,12 +139,10 @@ class IPLDStore(MutableMappingSB):
         self._mapping = HamtWrapper(self._host)
 
     @overload
-    def to_car(self, stream: BufferedIOBase) -> int:
-        ...
+    def to_car(self, stream: BufferedIOBase) -> int: ...
 
     @overload
-    def to_car(self, stream: None = None) -> bytes:
-        ...
+    def to_car(self, stream: None = None) -> bytes: ...
 
     def to_car(self, stream: Optional[BufferedIOBase] = None) -> Union[int, bytes]:
         return self._store.to_car(self.freeze(), stream)
@@ -142,7 +150,9 @@ class IPLDStore(MutableMappingSB):
     def import_car(self, stream: StreamLike) -> None:
         roots = self._store.import_car(stream)
         if len(roots) != 1:
-            raise ValueError(f"CAR must have a single root, the given CAR has {len(roots)} roots!")
+            raise ValueError(
+                f"CAR must have a single root, the given CAR has {len(roots)} roots!"
+            )
         self.set_root(roots[0])
 
     @classmethod

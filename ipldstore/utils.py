@@ -10,6 +10,7 @@ from typing_extensions import TypeGuard
 
 StreamLike = Union[BinaryIO, bytes]
 
+
 def ensure_stream(stream_or_bytes: StreamLike) -> BinaryIO:
     if isinstance(stream_or_bytes, bytes):
         return BytesIO(stream_or_bytes)

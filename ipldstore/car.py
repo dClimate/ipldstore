@@ -13,6 +13,7 @@ from .utils import is_cid_list, StreamLike, ensure_stream
 DagPbCodec = multicodec.get("dag-pb")
 Sha256Hash = multihash.get("sha2-256")
 
+
 @dataclasses.dataclass
 class CARBlockLocation:
     varint_size: int
@@ -51,7 +52,9 @@ def decode_car_header(stream: BinaryIO) -> Tuple[List[CID], int]:
     return roots, visize + header_size
 
 
-def decode_raw_car_block(stream: BinaryIO) -> Optional[Tuple[CID, bytes, CARBlockLocation]]:
+def decode_raw_car_block(
+    stream: BinaryIO,
+) -> Optional[Tuple[CID, bytes, CARBlockLocation]]:
     try:
         block_size, visize, _ = varint.decode_raw(stream)  # type: ignore [call-overload] # varint uses BufferedIOBase
     except ValueError:
@@ -89,7 +92,9 @@ def decode_raw_car_block(stream: BinaryIO) -> Optional[Tuple[CID, bytes, CARBloc
     return cid, bytes(data), CARBlockLocation(visize, block_size - len(data), len(data))
 
 
-def read_car(stream_or_bytes: StreamLike) -> Tuple[List[CID], Iterator[Tuple[CID, bytes, CARBlockLocation]]]:
+def read_car(
+    stream_or_bytes: StreamLike,
+) -> Tuple[List[CID], Iterator[Tuple[CID, bytes, CARBlockLocation]]]:
     """
     Reads a CAR.
 
@@ -107,10 +112,12 @@ def read_car(stream_or_bytes: StreamLike) -> Tuple[List[CID], Iterator[Tuple[CID
     """
     stream = ensure_stream(stream_or_bytes)
     roots, header_size = decode_car_header(stream)
+
     def blocks() -> Iterator[Tuple[CID, bytes, CARBlockLocation]]:
         offset = header_size
         while (next_block := decode_raw_car_block(stream)) is not None:
             cid, data, sizes = next_block
             yield cid, data, dataclasses.replace(sizes, offset=offset)
             offset += sizes.size
+
     return roots, blocks()
