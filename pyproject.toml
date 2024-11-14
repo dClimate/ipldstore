@@ -1,11 +1,27 @@
-# pyproject.toml
-[build-system]
-requires = [
-    "setuptools>=45",
-    "wheel",
-    "setuptools_scm>=6.2"
+[project]
+name = "ipldstore"
+version = "0.1.0"
+description = "KV store for Zarr"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "multiformats[full]>=0.3.1.post4",
+    "py-hamt",
+    "zarr>=2.18.3",
 ]
-build-backend = "setuptools.build_meta"
-[tool.setuptools_scm]
-version_scheme = "post-release"
-local_scheme = "no-local-version"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.118.8",
+    "memray>=1.14.0",
+    "pdoc>=15.0.0",
+    "py-hamt",
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+    "ruff>=0.7.3",
+    "snakeviz>=2.2.2",
+]
+
+# TODO temporary update to just use the plain git without a commit hash once version 2 is out and merged in
+[tool.uv.sources]
+py-hamt = { git = "https://github.com/dClimate/py-hamt", rev = "1ce68f7ecd64e2c0cf14550338832bf694ced97d" }
