@@ -3,21 +3,28 @@ from multiformats import CID
 
 import pytest
 
-test_cid = CID("base58btc", 1, "raw",
-"12206e6ff7950a36187a801613426e858dce686cd7d7e3c0fc42ee0330072d245c95")
+test_cid = CID(
+    "base58btc",
+    1,
+    "raw",
+    "12206e6ff7950a36187a801613426e858dce686cd7d7e3c0fc42ee0330072d245c95",
+)
 
-test_values = [b"hallo",
-               "hallo",
-               {"a": 1},
-               [1, 2, 3],
-               1,
-               1.34,
-               True,
-               False,
-               None,
-               test_cid,
-               [test_cid],
-               {"foo": test_cid}]
+test_values = [
+    b"hallo",
+    "hallo",
+    {"a": 1},
+    [1, 2, 3],
+    1,
+    1.34,
+    True,
+    False,
+    None,
+    test_cid,
+    [test_cid],
+    {"foo": test_cid},
+]
+
 
 @pytest.mark.parametrize("value", test_values)
 def test_store_and_retrieve(value):
@@ -26,9 +33,11 @@ def test_store_and_retrieve(value):
     assert s.get(cid) == value
 
 
-test_values = [["hallo", {"a": 5}],
-               [1, True, [2,1,4], b"foo"],
-              ]
+test_values = [
+    ["hallo", {"a": 5}],
+    [1, True, [2, 1, 4], b"foo"],
+]
+
 
 @pytest.mark.parametrize("values", test_values)
 def test_car_roundtrip(values):

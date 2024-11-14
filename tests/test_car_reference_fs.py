@@ -9,11 +9,11 @@ import xarray as xr
 
 import pytest
 
+
 def test_car_reference_fs():
     basename = "test_car_reference_fs"
     m = IPLDStore()
-    ds = xr.Dataset({"a": (("a",), [1, 2, 3]),
-                     "b": (("a",), [5., 6., 8.])})
+    ds = xr.Dataset({"a": (("a",), [1, 2, 3]), "b": (("a",), [5.0, 6.0, 8.0])})
     ds.to_zarr(m)
 
     with tempfile.TemporaryDirectory() as folder:
