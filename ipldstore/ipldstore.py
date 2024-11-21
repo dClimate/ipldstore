@@ -1,176 +1,137 @@
-"""
-Implementation of a MutableMapping based on IPLD data structures.
-"""
-
-from io import BufferedIOBase
+from copy import deepcopy
+from threading import Lock
 from collections.abc import MutableMapping
-import sys
-from typing import (
-    Optional,
-    Callable,
-    Any,
-    TypeVar,
-    Union,
-    Iterator,
-    overload,
-    List,
-    Dict,
-)
-
 from multiformats import CID
-from cbor2 import CBORTag
-from numcodecs.compat import ensure_bytes  # type: ignore
-
-from .contentstore import ContentAddressableStore, IPFSStore, MappingCAStore
-from .utils import StreamLike
-from .hamt_wrapper import HamtWrapper, inline_objects
+from py_hamt import HAMT, Store
+import requests
+from msgspec import json
 
 
-if sys.version_info >= (3, 9):
-    MutableMappingT = MutableMapping
-    MutableMappingSB = MutableMapping[str, bytes]
-else:
-    from typing import MutableMapping as MutableMappingT
+class IPFSStore(Store):
+    """
+    Copied from py-hamt's IPFS Store, with modifications for:
+    + uses a different api for uploading blobs to allow for arbitrary size blobs
+    + allows custom CID codecs per store
+    + uses blake3 has the CID hash type by default
+    """
 
-    MutableMappingSB = MutableMapping
-
-
-class IPLDStore(MutableMappingSB):
     def __init__(
         self,
-        host: str,
-        castore: Optional[ContentAddressableStore] = None,
-        sep: str = "/",
-        should_async_get: bool = True,
+        timeout_seconds=30,
+        gateway_uri_stem="http://127.0.0.1:8080",
+        rpc_uri_stem="http://127.0.0.1:5001",
+        cid_codec="dag-cbor",
     ):
-        self._host = host
-        # In this iteration of IPLDStore, we use a HAMT to store zarr chunks instead of a dict
-        self._mapping = HamtWrapper(self._host)
-        self._store = castore or MappingCAStore()
-        if isinstance(self._store, IPFSStore) and should_async_get:
-            # Monkey patch zarr to use the async get of multiple chunks
-            def storage_getitems(kv_self, keys, on_error="omit", **kwargs):
-                return kv_self._mutable_mapping.getitems(keys)
+        self.timeout_seconds = timeout_seconds
+        self.gateway_uri_stem = gateway_uri_stem
+        self.rpc_uri_stem = rpc_uri_stem
+        self.cid_codec = cid_codec
 
-            import zarr
+    def save(self, data: bytes) -> CID:
+        response = requests.post(
+            f"{self.rpc_uri_stem}/api/v0/add?cid-codec={self.cid_codec}&hash=blake3&pin=true",
+            files={"file": data},
+        )
 
-            zarr.KVStore.getitems = storage_getitems
-        self.sep = sep
-        self.root_cid: Optional[CID] = None
+        cid_str: str = json.decode(response.content)["Hash"]  # type: ignore
+        cid = CID.decode(cid_str)
 
-    def getitems(self, keys: List[str]) -> Dict[str, bytes]:
-        if not isinstance(self._store, IPFSStore):
-            raise NotImplementedError("Multiget of keys only supported for IPFSStore")
-        cid_to_key_map = {}
-        key_to_bytes_map = {}
-        to_async_get = []
-        for key in keys:
-            key_parts = key.split(self.sep)
-            get_value = self._mapping.get(key_parts)
-            try:
-                # First see if this is a special key that doesn't need to be handled by the store
-                inline_codec = inline_objects[key_parts[-1]]
-                key_to_bytes_map[key] = inline_codec.encoder(get_value)
-            except KeyError:
-                # If it isn't, the key is an IPFS CID and needs to be passed to the store to be handled asynchronously
-                if isinstance(get_value, CBORTag):
-                    get_value = CID.decode(get_value.value[1:]).set(base="base32")
-                assert isinstance(get_value, CID)
-                cid_to_key_map[get_value] = key
-                to_async_get.append(get_value)
-        # Get the bytes for all CIDs asynchronously
-        cid_to_bytes_map = self._store.getitems(to_async_get)
-        for cid, key in cid_to_key_map.items():
-            key_to_bytes_map[key] = cid_to_bytes_map[cid]
-        return key_to_bytes_map
+        return cid
 
-    def __getitem__(self, key: str) -> bytes:
-        key_parts = key.split(self.sep)
-        get_value = self._mapping.get(key_parts)
-        try:
-            inline_codec = inline_objects[key_parts[-1]]
-        except KeyError:
-            if isinstance(get_value, CBORTag):
-                get_value = CID.decode(get_value.value[1:]).set(base="base32")
-            assert isinstance(get_value, CID)
+    # Ignore the type error since CID is in the IPLDKind type
+    def load(self, id: CID) -> bytes:  # type: ignore
+        response = requests.get(
+            f"{self.gateway_uri_stem}/ipfs/{str(id)}", timeout=self.timeout_seconds
+        )
 
-            res = self._store.get(get_value)
-            assert isinstance(res, bytes)
-            return res
-        else:
-            return inline_codec.encoder(get_value)
+        return response.content
 
-    def __setitem__(self, key: str, value: bytes) -> None:
-        value = ensure_bytes(value)
-        key_parts = key.split(self.sep)
+
+class IPLDStore(MutableMapping):
+    def __init__(self, root_cid: CID | None = None, read_only: bool = True):
+        self.store = IPFSStore(cid_codec="raw")
+        self.hamt = HAMT(store=IPFSStore(), root_node_id=root_cid)
+        self.read_only = read_only
+        self.lock = Lock()
+
+    def get_root_cid(self) -> CID:
+        if not self.read_only:
+            self.lock.acquire(blocking=True)
+
+        cid: CID = self.hamt.root_node_id  # type: ignore
+
+        if not self.read_only:
+            self.lock.release()
+
+        return cid
+
+    def make_read_only(self):
+        self.lock.acquire(blocking=True)
+        self.read_only = True
+        self.hamt.make_read_only()
+        self.lock.release()
+
+    def enable_write(self):
+        self.lock.acquire(blocking=True)
+        self.read_only = False
+        self.hamt.enable_write()
+        self.lock.release()
+
+    def __getitem__(self, key: str):
+        if not self.read_only:
+            self.lock.acquire(blocking=True)
 
         try:
-            inline_codec = inline_objects[key_parts[-1]]
+            cid: CID = self.hamt[key]  # type: ignore
+        # It seems zarr sometimes gets before it writes a key. Raising the KeyError through seems to work, but we do need to release the lock before we do so
         except KeyError:
-            cid = self._store.put(value)
-            set_value = cid
-        else:
-            set_value = inline_codec.decoder(value)
-        self._mapping.set(key_parts, set_value)
-        self.root_cid = None
+            if not self.read_only:
+                self.lock.release()
+            raise KeyError
+        data = self.store.load(cid)
 
-    def __delitem__(self, key: str) -> None:
-        # key_parts = key.split(self.sep)
-        # del_recursive(self._mapping, key_parts)
-        raise NotImplementedError
+        if not self.read_only:
+            self.lock.release()
 
-    def __iter__(self) -> Iterator[str]:
-        # return self._iter_nested("", self._mapping)
-        return self._mapping.iter_all()
+        return data
 
-    def __len__(self) -> int:
-        return len(list(self._mapping.iter_all()))
+    def __setitem__(self, key: str, value: bytes):
+        if not self.read_only:
+            self.lock.acquire(blocking=True)
 
-    def freeze(self) -> CID:
-        """
-        Store current version and return the corresponding root cid.
-        """
-        if self.root_cid is None:
-            self.root_cid = self._store.put(self._mapping.to_dict())
-        return self.root_cid
+        cid = self.store.save(value)
+        self.hamt[key] = cid
 
-    def clear(self) -> None:
-        self.root_cid = None
-        self._mapping = HamtWrapper(self._host)
+        if not self.read_only:
+            self.lock.release()
 
-    @overload
-    def to_car(self, stream: BufferedIOBase) -> int: ...
+    def __delitem__(self, key: str):
+        if not self.read_only:
+            self.lock.acquire(blocking=True)
 
-    @overload
-    def to_car(self, stream: None = None) -> bytes: ...
+        del self.hamt[key]
 
-    def to_car(self, stream: Optional[BufferedIOBase] = None) -> Union[int, bytes]:
-        return self._store.to_car(self.freeze(), stream)
+        if not self.read_only:
+            self.lock.release()
 
-    def import_car(self, stream: StreamLike) -> None:
-        roots = self._store.import_car(stream)
-        if len(roots) != 1:
-            raise ValueError(
-                f"CAR must have a single root, the given CAR has {len(roots)} roots!"
-            )
-        self.set_root(roots[0])
+    def __len__(self):
+        if not self.read_only:
+            self.lock.acquire(blocking=True)
 
-    @classmethod
-    def from_car(cls, stream: StreamLike) -> "IPLDStore":
-        instance = cls()
-        instance.import_car(stream)
-        return instance
+        length = len(self.hamt)
 
-    def set_root(self, cid: CID) -> None:
-        if isinstance(cid, str):
-            cid = CID.decode(cid)
-        assert cid in self._store
-        self.root_cid = cid
-        whole_mapping = self._store.get(cid)
-        self._mapping = HamtWrapper.from_dict(whole_mapping, self._host)
+        if not self.read_only:
+            self.lock.release()
 
+        return length
 
-_T = TypeVar("_T")
-_V = TypeVar("_V")
+    def __iter__(self):
+        if not self.read_only:
+            self.lock.acquire(blocking=True)
 
-RecursiveMapping = MutableMappingT[_T, Union[_V, "RecursiveMapping"]]  # type: ignore
+        hamt_copy = deepcopy(self.hamt)
+
+        if not self.read_only:
+            self.lock.release()
+
+        return hamt_copy.__iter__()

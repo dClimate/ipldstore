@@ -26,8 +26,10 @@ dev = [
     "pytest>=8.3.3",
     "ruff>=0.7.3",
     "snakeviz>=2.2.2",
+    "xarray>=2024.10.0",
+    "numpy>=2.1.3",
+    "pandas>=2.2.3",
 ]
 
-# TODO temporary update to just use the plain git without a commit hash once version 2 is out and merged in
 [tool.uv.sources]
-py-hamt = { git = "https://github.com/dClimate/py-hamt", rev = "08b0fa5b67c3f457be4b6a5c1d48f04771ae1bf3" }
+py-hamt = { git = "https://github.com/dClimate/py-hamt", rev = "2d87d50e9f2c1c31e988d1666f32bbf6927c0fca" }
